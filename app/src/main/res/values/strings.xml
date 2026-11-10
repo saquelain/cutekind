@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">CuteKind</string>
+    <string name="widget_label">Partner\'s drawing</string>
+    <string name="widget_description">Shows the latest drawing your partner made for you</string>
+</resources>
