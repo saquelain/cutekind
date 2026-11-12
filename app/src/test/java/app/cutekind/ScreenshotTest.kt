@@ -40,7 +40,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cutekind.data.AppState
 import app.cutekind.data.Days
 import app.cutekind.data.Feature
+import app.cutekind.data.Sticker
 import app.cutekind.data.Stroke
+import app.cutekind.draw.Gallery
+import app.cutekind.draw.StickerMaker
 import app.cutekind.ui.AppScaffold
 import app.cutekind.ui.CuteKindTheme
 import app.cutekind.ui.DrawScreen
@@ -122,6 +125,94 @@ class ScreenshotTest {
         assertTrue("stroke is horizontal at 85% height", strokes[0].p.filterIndexed { i, _ -> i % 2 == 1 }.all { it in 1650..1750 })
         assertEquals("a tap is a single dot", 2, strokes[1].p.size)
         compose.onRoot().captureRoboImage("screenshots/07_draw.png")
+    }
+
+    @Test fun stickersCanBeAddedMovedResizedAndRemoved() {
+        var stickers by mutableStateOf(listOf<Sticker>())
+        val strokes = ArrayList<Stroke>()
+        compose.setContent {
+            CuteKindTheme {
+                AppScaffold(Samples.paired, Tab.DRAW, {}) { m ->
+                    DrawScreen(Samples.heartStrokes.take(1), 0xFFFFFDF8.toInt(), "", "Maya", { strokes.add(it) }, {}, {}, {}, {}, {}, m,
+                        stickers = stickers, onStickers = { stickers = it })
+                }
+            }
+        }
+        val canvas = compose.onNodeWithContentDescription("Drawing canvas")
+        compose.onNodeWithContentDescription("Sticker 🌙").performScrollTo().performClick()
+        assertEquals(listOf("🌙"), stickers.map { it.t })
+        assertEquals(1000, stickers[0].x)
+
+        // dragging on the sticker moves it and draws nothing
+        canvas.performTouchInput { swipe(center, Offset(width * 0.8f, height * 0.25f), 300) }
+        assertTrue("moved right and up: ${stickers[0]}", stickers[0].x in 1550..1650 && stickers[0].y in 450..550)
+        assertTrue("no stroke drawn while moving a sticker", strokes.isEmpty())
+
+        val before = stickers[0].s
+        compose.onNodeWithText("Bigger").performClick()
+        assertTrue(stickers[0].s > before)
+        compose.onNodeWithText("Turn").performClick()
+        assertEquals(15f, stickers[0].r)
+
+        // words become a sticker in the current pen colour
+        compose.onNodeWithText("Text").performScrollTo().performClick()
+        compose.onNodeWithText("Words to put on the drawing").performTextInput("miss u")
+        compose.onNodeWithText("Add").performClick()
+        assertEquals(listOf("e", "t"), stickers.map { it.k })
+        assertEquals("miss u", stickers[1].t)
+        compose.onNodeWithText("Smaller").performScrollTo()
+        compose.onRoot().captureRoboImage("screenshots/21_draw_stickers.png")
+
+        compose.onNodeWithText("Remove").performClick()
+        assertEquals(listOf("🌙"), stickers.map { it.t })
+        compose.onNodeWithText("Remove").assertDoesNotExist()
+
+        // drawing away from any sticker still draws
+        canvas.performTouchInput { swipe(Offset(width * 0.1f, height * 0.9f), Offset(width * 0.5f, height * 0.9f), 200) }
+        assertEquals(1, strokes.size)
+    }
+
+    @Test fun photoStickersAreShrunkToFitTheRelay() {
+        val rnd = java.util.Random(1)
+        val photo = Bitmap.createBitmap(1200, 900, Bitmap.Config.ARGB_8888).apply {
+            val px = IntArray(1200 * 900) { 0xFF000000.toInt() or rnd.nextInt(0xFFFFFF) } // noise: the worst case for compression
+            setPixels(px, 0, 1200, 0, 0, 1200, 900)
+        }
+        val data = StickerMaker.encode(photo)
+        val bytes = java.util.Base64.getDecoder().decode(data)
+        assertTrue("fits the budget: ${bytes.size}", bytes.size <= StickerMaker.MAX_BYTES)
+        val back = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        assertEquals("keeps its 4:3 shape", 4f / 3f, back.width.toFloat() / back.height, 0.05f)
+
+        // and a drawing carrying three of them still fits in the relay's message limit
+        val d = Samples.drawing("p", "Sam", now).copy(stickers = List(3) { Sticker("i", data, 1000, 1000, 0.4f) })
+        val env = app.cutekind.data.Envelope(id = "x", from = "a", name = "Sam", ts = now, type = "draw", drawing = d)
+        val keys = app.cutekind.sync.Wire.keys("K7QM2XHD9TRB")
+        val lines = app.cutekind.sync.Wire.encode(env, keys)
+        assertTrue("chunks: ${lines.size}", lines.size <= 64)
+        assertEquals(env, app.cutekind.sync.Wire.decode(lines.joinToString("") { it.substringAfterLast('|') }, keys))
+        widgetShot("22_widget_stickers", Samples.paired.copy(received = listOf(Samples.drawing("s", "Maya", now, stickers = listOf(
+            Sticker("i", StickerMaker.encode(Samples.photo()), 560, 620, 0.42f, -8f),
+            Sticker("t", "miss u", 1350, 1500, 0.13f, 6f, 0xFFE8507A.toInt()),
+            Sticker("e", "🌙", 1500, 520, 0.22f),
+        )))))
+    }
+
+    @Test fun drawingsAreSavedToTheCuteKindAlbum() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val d = Samples.paired.received.first()
+        val saved = java.io.ByteArrayOutputStream()
+        val resolver = org.robolectric.Shadows.shadowOf(context.contentResolver)
+        // Robolectric hands back the next row of the images table; give that row somewhere to write
+        resolver.registerOutputStream(android.net.Uri.parse(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI.toString() + "/1"), saved)
+        assertTrue(Gallery.save(context, d))
+        val row = resolver.insertStatements.single().contentValues
+        assertEquals("Pictures/CuteKind", row.getAsString(android.provider.MediaStore.Images.Media.RELATIVE_PATH))
+        assertEquals("image/png", row.getAsString(android.provider.MediaStore.Images.Media.MIME_TYPE))
+        assertTrue(row.getAsString(android.provider.MediaStore.Images.Media.DISPLAY_NAME).matches(Regex("CuteKind_\\d{8}_\\d{6}_Maya\\.png")))
+        val png = android.graphics.BitmapFactory.decodeByteArray(saved.toByteArray(), 0, saved.size())
+        assertEquals(1080, png.width); assertEquals(1080, png.height)
+        assertEquals("published, not left pending", 0, resolver.updateStatements.single().contentValues.getAsInteger(android.provider.MediaStore.Images.Media.IS_PENDING))
     }
 
     // Narrow phone with large text: every tool stays reachable and no label is cut mid-word
@@ -223,6 +314,8 @@ class ScreenshotTest {
         compose.onNodeWithText("Memories").assertDoesNotExist()
         compose.onNodeWithText("Settings").assertExists()
     }
+
+    private fun widgetShot(name: String, state: AppState) = widget(name, state)
 
     private fun widget(name: String, state: AppState, wDp: Int = 220, hDp: Int = 220) {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()

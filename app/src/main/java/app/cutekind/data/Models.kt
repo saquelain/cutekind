@@ -13,6 +13,18 @@ data class Stroke(
     val e: Boolean = false,     // eraser stroke (painted in the background colour)
 )
 
+/** Something placed on top of the strokes: an emoji, a line of text, or a small picture. */
+@Serializable
+data class Sticker(
+    val k: String,              // e = emoji, t = text, i = image
+    val t: String,              // the emoji or text; for an image, base64 WebP
+    val x: Int,                 // centre, in 0..UNIT
+    val y: Int,
+    val s: Float,               // size as a fraction of the canvas side (text height, or image width)
+    val r: Float = 0f,          // rotation in degrees
+    val c: Int = 0,             // text colour
+)
+
 @Serializable
 data class Drawing(
     val id: String,
@@ -22,6 +34,7 @@ data class Drawing(
     val bg: Int,
     val strokes: List<Stroke>,
     val note: String = "",
+    val stickers: List<Sticker> = emptyList(),
 )
 
 @Serializable
@@ -59,6 +72,8 @@ enum class Feature(val title: String, val desc: String, val default: Boolean = t
     DAYS_COUNTER("Days together", "Count the days since your anniversary, in the app and on the widget"),
     STREAK("Doodle streak", "Count the days in a row you both sent a drawing"),
     NUDGES("Thinking of you", "Send a quick heart when there is no time to draw"),
+    STICKERS("Stickers", "Add emoji, text and photo stickers to your drawings"),
+    GALLERY("Save to gallery", "Keep a copy of every drawing you send or receive in a CuteKind album in your phone's gallery"),
     REPLAY("Stroke replay", "Watch a drawing appear stroke by stroke, the way it was drawn"),
     MEMORIES("Memories", "Keep a gallery of the drawings you have sent each other"),
     NOTIFICATIONS("Notifications", "Tell me when my partner sends something"),

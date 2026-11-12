@@ -35,8 +35,20 @@ object Samples {
         wave(0xFF3B2A33.toInt(), 1650), dot(0xFF1E88E5.toInt(), 380, 420), dot(0xFFFDD835.toInt(), 520, 300),
     )
 
-    fun drawing(id: String, name: String, ts: Long, bg: Int = 0xFFFFFDF8.toInt(), strokes: List<Stroke> = heartStrokes, note: String = "") =
-        Drawing(id, "dev-$name", name, ts, bg, strokes, note)
+    fun drawing(id: String, name: String, ts: Long, bg: Int = 0xFFFFFDF8.toInt(), strokes: List<Stroke> = heartStrokes, note: String = "", stickers: List<app.cutekind.data.Sticker> = emptyList()) =
+        Drawing(id, "dev-$name", name, ts, bg, strokes, note, stickers)
+
+    /** A stand-in "photo": a sunset gradient with a sun, for photo-sticker tests. */
+    fun photo(): android.graphics.Bitmap {
+        val b = android.graphics.Bitmap.createBitmap(400, 300, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.shader = android.graphics.LinearGradient(0f, 0f, 0f, 300f, 0xFF3A3F8F.toInt(), 0xFFFF9A62.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 400f, 300f, p)
+        p.shader = null; p.color = 0xFFFFE08A.toInt(); c.drawCircle(280f, 190f, 60f, p)
+        p.color = 0xFF22264F.toInt(); c.drawRect(0f, 240f, 400f, 300f, p)
+        return b
+    }
 
     val fresh = AppState(deviceId = "me", myName = "Sam", code = "K7QM2XHD9TRB")
 

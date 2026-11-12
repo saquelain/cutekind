@@ -1,11 +1,15 @@
 package app.cutekind.draw
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.util.LruCache
+import app.cutekind.data.Drawing
+import app.cutekind.data.Sticker
 import app.cutekind.data.Stroke
 import app.cutekind.data.UNIT
 
@@ -47,7 +51,47 @@ object Renderer {
         }
     }
 
-    fun bitmap(strokes: List<Stroke>, bg: Int, px: Int, cornerFraction: Float = 0f): Bitmap {
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val images = LruCache<Int, Bitmap>(12)
+    private val box = RectF()
+
+    private fun image(data: String): Bitmap? = images.get(data.hashCode()) ?: runCatching {
+        val bytes = java.util.Base64.getDecoder().decode(data)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()?.also { images.put(data.hashCode(), it) }
+
+    /** Width/height ratio of an image sticker, used for hit-testing and outlines. */
+    fun aspect(st: Sticker): Float = if (st.k == "i") image(st.t)?.let { it.width.toFloat() / it.height } ?: 1f else 1f
+
+    /** Stickers sit on top of the strokes, in the order they were added. */
+    @Synchronized
+    fun stickers(canvas: Canvas, size: Float, list: List<Sticker>) {
+        val k = size / UNIT
+        for (st in list) {
+            canvas.save()
+            canvas.translate(st.x * k, st.y * k)
+            canvas.rotate(st.r)
+            if (st.k == "i") {
+                image(st.t)?.let { bmp ->
+                    val w = st.s * size; val h = w * bmp.height / bmp.width
+                    box.set(-w / 2, -h / 2, w / 2, h / 2)
+                    canvas.drawBitmap(bmp, null, box, imagePaint)
+                }
+            } else {
+                textPaint.textSize = st.s * size
+                textPaint.color = if (st.k == "t") st.c else Color.BLACK
+                textPaint.isFakeBoldText = st.k == "t"
+                val fm = textPaint.fontMetrics
+                canvas.drawText(st.t, 0f, -(fm.ascent + fm.descent) / 2, textPaint)
+            }
+            canvas.restore()
+        }
+    }
+
+    fun bitmap(d: Drawing, px: Int, cornerFraction: Float = 0f): Bitmap = bitmap(d.strokes, d.bg, px, cornerFraction, d.stickers)
+
+    fun bitmap(strokes: List<Stroke>, bg: Int, px: Int, cornerFraction: Float = 0f, stickers: List<Sticker> = emptyList()): Bitmap {
         val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         if (cornerFraction > 0f) {
@@ -56,6 +100,7 @@ object Renderer {
         }
         canvas.drawColor(bg)
         draw(canvas, px.toFloat(), strokes, bg)
+        stickers(canvas, px.toFloat(), stickers)
         return bmp
     }
 

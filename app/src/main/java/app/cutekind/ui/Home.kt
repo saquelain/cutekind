@@ -123,6 +123,7 @@ fun HomeScreen(
             if (latest != null) {
                 DrawingView(
                     latest.strokes, latest.bg, Modifier.align(Alignment.CenterHorizontally).widthIn(max = 440.dp).fillMaxWidth(),
+                    stickers = latest.stickers,
                     replay = state.on(Feature.REPLAY), replayKey = latest.id,
                     description = "Drawing from ${latest.name}",
                 )

@@ -43,7 +43,7 @@ class PartnerWidget : AppWidgetProvider() {
             rv.setInt(R.id.widget_bg, "setColorFilter", bg)
 
             if (latest != null) {
-                rv.setImageViewBitmap(R.id.widget_drawing, Renderer.bitmap(latest.strokes, bg, 480, 0.09f))
+                rv.setImageViewBitmap(R.id.widget_drawing, Renderer.bitmap(latest, 480, 0.09f))
                 rv.setViewVisibility(R.id.widget_drawing, View.VISIBLE)
                 rv.setViewVisibility(R.id.widget_empty, View.GONE)
             } else {

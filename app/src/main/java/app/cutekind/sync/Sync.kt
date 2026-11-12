@@ -22,6 +22,7 @@ import app.cutekind.R
 import app.cutekind.data.Envelope
 import app.cutekind.data.Feature
 import app.cutekind.data.Repo
+import app.cutekind.draw.Gallery
 import app.cutekind.draw.Renderer
 import app.cutekind.widget.PartnerWidget
 import java.util.concurrent.TimeUnit
@@ -46,6 +47,7 @@ object Sync {
     fun deliver(app: Context, events: List<SyncEvent>) {
         PartnerWidget.updateAll(app)
         val state = Repo.get(app).state.value
+        if (state.on(Feature.GALLERY)) events.forEach { if (it is SyncEvent.NewDrawing) Gallery.save(app, it.drawing) }
         if (!state.on(Feature.NOTIFICATIONS)) return
         for (e in events) when (e) {
             is SyncEvent.NewDrawing -> notify(app, 1, "${e.drawing.name.ifBlank { "Your partner" }} drew something for you",
@@ -69,7 +71,7 @@ object Sync {
             .setContentTitle(title).setContentText(text)
             .setContentIntent(open).setAutoCancel(true)
         drawing?.drawing?.let { d ->
-            val bmp = Renderer.bitmap(d.strokes, d.bg, 512)
+            val bmp = Renderer.bitmap(d, 512)
             b.setLargeIcon(bmp).setStyle(NotificationCompat.BigPictureStyle().bigPicture(bmp).bigLargeIcon(null as android.graphics.Bitmap?))
         }
         nm.notify(id, b.build())

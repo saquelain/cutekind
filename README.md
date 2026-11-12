@@ -38,7 +38,8 @@ the host in `AndroidManifest.xml`.
 
 Every feature has its own switch in **Settings**:
 
-Daily question, spicy questions (off by default), answer-to-reveal, question on widget,
+Instant delivery, stickers (emoji, text and photo), save to gallery (a CuteKind album),
+daily question, spicy questions (off by default), answer-to-reveal, question on widget,
 caption on widget, days together, doodle streak, thinking-of-you hearts, stroke replay,
 memories gallery, notifications, background sync.
 

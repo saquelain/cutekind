@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.cutekind.data.Sticker
 import app.cutekind.data.Stroke
 import app.cutekind.draw.Renderer
 
@@ -38,6 +39,7 @@ fun DrawingView(
     strokes: List<Stroke>,
     bg: Int,
     modifier: Modifier = Modifier,
+    stickers: List<Sticker> = emptyList(),
     replay: Boolean = false,
     replayKey: Any? = null,
     corner: Dp = 24.dp,
@@ -62,7 +64,12 @@ fun DrawingView(
             .semantics { contentDescription = description },
     ) {
         drawRect(Color(bg))
-        drawIntoCanvas { Renderer.draw(it.nativeCanvas, size.width, strokes, bg, if (replay) progress.value else 1f) }
+        val shown = if (replay) progress.value else 1f
+        drawIntoCanvas {
+            Renderer.draw(it.nativeCanvas, size.width, strokes, bg, shown)
+            // stickers pop in once the strokes have finished drawing
+            if (shown >= 1f) Renderer.stickers(it.nativeCanvas, size.width, stickers)
+        }
     }
 }
 

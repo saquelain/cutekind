@@ -56,7 +56,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.cutekind.data.Sticker
 import app.cutekind.data.Stroke
+import app.cutekind.draw.StickerMaker
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.unit.sp
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 import app.cutekind.data.UNIT
 import app.cutekind.draw.Renderer
 import app.cutekind.draw.simplify
@@ -78,6 +87,10 @@ fun DrawScreen(
     onNote: (String) -> Unit,
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
+    stickers: List<Sticker> = emptyList(),
+    onStickers: (List<Sticker>) -> Unit = {},
+    stickersEnabled: Boolean = true,
+    onPickPhoto: () -> Unit = {},
 ) {
     var color by rememberSaveable { mutableIntStateOf(PENS[1]) }
     var brush by rememberSaveable { mutableIntStateOf(1) }
@@ -90,6 +103,24 @@ fun DrawScreen(
     val cache = remember { StrokeCache() }
     fun width() = BRUSHES[brush] * if (eraser) 2.5f else 1f
 
+    // stickers: the one being edited, plus the latest list for the gesture code to read
+    var selected by remember { mutableIntStateOf(-1) }
+    val placed by rememberUpdatedState(stickers)
+    val setStickers by rememberUpdatedState(onStickers)
+    if (selected >= stickers.size) selected = -1
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var draft by rememberSaveable { mutableStateOf("") }
+    fun add(st: Sticker) {
+        if (stickers.size >= StickerMaker.MAX_STICKERS) return
+        // nudge each new one a little so they do not pile up exactly on top of each other
+        val off = ((stickers.size + 2) % 5 - 2) * 90
+        onStickers(stickers + st.copy(x = st.x + off, y = st.y + off)); selected = stickers.size
+    }
+    fun edit(change: (Sticker) -> Sticker) {
+        stickers.getOrNull(selected)?.let { cur -> onStickers(stickers.toMutableList().also { it[selected] = change(cur) }) }
+    }
+    val accent = MaterialTheme.colorScheme.primary
+
     val canvas: @Composable (Modifier) -> Unit = { m ->
         val shape = RoundedCornerShape(24.dp)
         Canvas(
@@ -99,6 +130,32 @@ fun DrawScreen(
                 .pointerInput(color, brush, eraser) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        val ux = down.position.x / size.width * UNIT
+                        val uy = down.position.y / size.height * UNIT
+                        val hit = placed.indexOfLast { hypot(it.x - ux, it.y - uy) <= reach(it) }
+                        if (hit >= 0) {
+                            // one finger moves the sticker; two fingers resize and turn it
+                            selected = hit
+                            down.consume()
+                            // work on our own copy: several touch events can arrive before the screen redraws
+                            var cur = placed[hit]
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (hit >= placed.size) break
+                                val pan = event.calculatePan()
+                                val next = cur.copy(
+                                    x = (cur.x + pan.x / size.width * UNIT).roundToInt().coerceIn(0, UNIT),
+                                    y = (cur.y + pan.y / size.height * UNIT).roundToInt().coerceIn(0, UNIT),
+                                    s = (cur.s * event.calculateZoom()).coerceIn(MIN_SIZE, MAX_SIZE),
+                                    r = cur.r + event.calculateRotation(),
+                                )
+                                if (next != cur) { cur = next; setStickers(placed.toMutableList().also { it[hit] = next }) }
+                                event.changes.forEach { it.consume() }
+                                if (event.changes.none { it.pressed }) break
+                            }
+                            return@awaitEachGesture
+                        }
+                        selected = -1
                         fun add(o: Offset): Boolean {
                             val x = (o.x / size.width * UNIT).toInt().coerceIn(0, UNIT)
                             val y = (o.y / size.height * UNIT).toInt().coerceIn(0, UNIT)
@@ -129,12 +186,32 @@ fun DrawScreen(
                     it.nativeCanvas.drawBitmap(cache.bitmap!!, 0f, 0f, null)
                     if (drawing && live.isNotEmpty())
                         Renderer.draw(it.nativeCanvas, size.width, listOf(Stroke(color, width(), live.toList(), eraser)), bg)
+                    Renderer.stickers(it.nativeCanvas, size.width, stickers)
+                }
+                stickers.getOrNull(selected)?.let { st ->
+                    drawCircle(
+                        accent, radius = reach(st) / UNIT * size.width, center = Offset(st.x / UNIT.toFloat() * size.width, st.y / UNIT.toFloat() * size.height),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))),
+                    )
                 }
             }
         }
     }
 
     val tools: @Composable () -> Unit = {
+        if (selected >= 0) {
+            // everything two fingers can do, as buttons too
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                Text("Sticker", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 4.dp))
+                TextButton({ edit { it.copy(s = (it.s / 1.2f).coerceAtLeast(MIN_SIZE)) } }) { Text("Smaller", maxLines = 1, softWrap = false) }
+                TextButton({ edit { it.copy(s = (it.s * 1.2f).coerceAtMost(MAX_SIZE)) } }) { Text("Bigger", maxLines = 1, softWrap = false) }
+                TextButton({ edit { it.copy(r = it.r + 15f) } }) { Text("Turn", maxLines = 1, softWrap = false) }
+                TextButton({ val i = selected; selected = -1; onStickers(stickers.filterIndexed { n, _ -> n != i }) }) {
+                    Text("Remove", maxLines = 1, softWrap = false, color = MaterialTheme.colorScheme.error)
+                }
+                TextButton({ selected = -1 }) { Text("Done", maxLines = 1, softWrap = false) }
+            }
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             PENS.forEach { c -> Swatch(c, selected = !eraser && c == color, label = "Pen colour") { color = c; eraser = false } }
         }
@@ -154,19 +231,45 @@ fun DrawScreen(
             }
             FilterChip(eraser, { eraser = !eraser }, label = { Text("Eraser", maxLines = 1, softWrap = false) })
             TextButton(onUndo, enabled = strokes.isNotEmpty()) { Text("Undo", maxLines = 1, softWrap = false) }
-            TextButton(onClear, enabled = strokes.isNotEmpty()) { Text("Clear", maxLines = 1, softWrap = false) }
+            TextButton(onClear, enabled = strokes.isNotEmpty() || stickers.isNotEmpty()) { Text("Clear", maxLines = 1, softWrap = false) }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Paper", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 6.dp))
             PAPERS.forEach { c -> Swatch(c, selected = c == bg, label = "Paper colour") { onBg(c) } }
         }
+        if (stickersEnabled) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterChip(typing, { typing = !typing }, label = { Text("Text", maxLines = 1, softWrap = false) })
+                FilterChip(false, onPickPhoto, label = { Text("Photo", maxLines = 1, softWrap = false) },
+                    enabled = stickers.count { it.k == "i" } < StickerMaker.MAX_PHOTOS)
+                StickerMaker.EMOJI.forEach { e ->
+                    Box(
+                        Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Add sticker") { add(StickerMaker.emoji(e)) }
+                            .semantics { contentDescription = "Sticker $e" },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(e, fontSize = 26.sp) }
+                }
+            }
+            if (typing) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        draft, { draft = it.take(30) }, Modifier.weight(1f), singleLine = true,
+                        placeholder = { Text("Words to put on the drawing", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    )
+                    TextButton({ add(StickerMaker.text(draft, color)); draft = ""; typing = false }, enabled = draft.isNotBlank()) {
+                        Text("Add", maxLines = 1, softWrap = false)
+                    }
+                }
+            }
+        }
         OutlinedTextField(
             note, { onNote(it.take(60)) }, Modifier.fillMaxWidth(), singleLine = true,
             placeholder = { Text("Add a little note (optional)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
         )
-        Button(onSend, Modifier.fillMaxWidth().height(52.dp), enabled = strokes.isNotEmpty()) {
+        Button(onSend, Modifier.fillMaxWidth().height(52.dp), enabled = strokes.isNotEmpty() || stickers.isNotEmpty()) {
             Text("Send to $partnerLabel's home screen", maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -196,6 +299,16 @@ fun DrawScreen(
         }
     }
 }
+
+private const val MIN_SIZE = 0.05f
+private const val MAX_SIZE = 1.2f
+
+/** How far from its centre a sticker can be grabbed, in canvas units. Never smaller than a fingertip. */
+private fun reach(st: Sticker): Float = when (st.k) {
+    "t" -> st.s * UNIT * (0.3f * st.t.length).coerceIn(0.7f, 4f)
+    "i" -> st.s * UNIT * 0.5f * maxOf(1f, 1f / Renderer.aspect(st))
+    else -> st.s * UNIT * 0.7f
+}.coerceAtLeast(110f)
 
 @Composable
 private fun Swatch(color: Int, selected: Boolean, label: String, onClick: () -> Unit) {

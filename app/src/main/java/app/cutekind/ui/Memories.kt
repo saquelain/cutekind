@@ -53,7 +53,7 @@ fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
         }
         items(list, key = { it.id }) { d ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                DrawingView(d.strokes, d.bg, Modifier.fillMaxWidth(), corner = 18.dp)
+                DrawingView(d.strokes, d.bg, Modifier.fillMaxWidth(), stickers = d.stickers, corner = 18.dp)
                 Text(
                     if (d.id in waiting) "Not sent yet" else d.note.ifBlank { Days.ago(d.ts, now).replaceFirstChar(Char::uppercase) },
                     style = MaterialTheme.typography.bodySmall,

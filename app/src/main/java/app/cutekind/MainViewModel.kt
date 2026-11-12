@@ -16,7 +16,12 @@ import app.cutekind.data.Envelope
 import app.cutekind.data.Feature
 import app.cutekind.data.Questions
 import app.cutekind.data.Repo
+import app.cutekind.data.Sticker
 import app.cutekind.data.Stroke
+import app.cutekind.draw.Gallery
+import app.cutekind.draw.StickerMaker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.cutekind.sync.HISTORY_LIMIT
 import app.cutekind.sync.Sync
 import app.cutekind.sync.Wire
@@ -32,6 +37,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val strokes = mutableStateListOf<Stroke>()
     var paper by mutableIntStateOf(PAPERS[0])
     var note by mutableStateOf("")
+    var stickers by mutableStateOf(listOf<Sticker>())
+
+    /** Turns a picked photo into a small sticker in the middle of the canvas. */
+    fun addPhotoSticker(uri: android.net.Uri) = viewModelScope.launch {
+        val made = withContext(Dispatchers.IO) { StickerMaker.fromPhoto(getApplication(), uri) } ?: return@launch
+        if (stickers.size < StickerMaker.MAX_STICKERS && stickers.count { it.k == "i" } < StickerMaker.MAX_PHOTOS) stickers = stickers + made
+    }
 
     /** Non-null while the "join with a code" dialog is open; pre-filled when a pairing link was tapped. */
     var joinPrompt by mutableStateOf<String?>(null)
@@ -64,12 +76,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun sendDrawing() {
-        if (strokes.isEmpty()) return
+        if (strokes.isEmpty() && stickers.isEmpty()) return
         val s = state.value
-        val d = Drawing(Wire.newId(), s.deviceId, s.myName, System.currentTimeMillis(), paper, strokes.toList(), note.trim())
+        val d = Drawing(Wire.newId(), s.deviceId, s.myName, System.currentTimeMillis(), paper, strokes.toList(), note.trim(), stickers)
         repo.update { it.copy(sent = (listOf(d) + it.sent).take(HISTORY_LIMIT)) }
         send("draw") { it.copy(drawing = d) }
-        strokes.clear(); note = ""
+        if (s.on(Feature.GALLERY)) viewModelScope.launch(Dispatchers.IO) { Gallery.save(getApplication(), d) }
+        strokes.clear(); note = ""; stickers = emptyList()
     }
 
     fun answer(text: String) {

@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.material3.SnackbarHostState
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
                 var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
                 val snackbar = remember { SnackbarHostState() }
                 val scope = rememberCoroutineScope()
+                val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(vm::addPhotoSticker) }
                 val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
                 // while the app is open, check for new drawings every 30 seconds
@@ -97,7 +99,9 @@ class MainActivity : ComponentActivity() {
                             Tab.DRAW -> DrawScreen(
                                 vm.strokes, vm.paper, vm.note, state.partnerLabel,
                                 onStroke = { vm.strokes.add(it) }, onUndo = { vm.strokes.removeLastOrNull() },
-                                onClear = { vm.strokes.clear() }, onBg = { vm.paper = it }, onNote = { vm.note = it },
+                                onClear = { vm.strokes.clear(); vm.stickers = emptyList() },
+                                stickers = vm.stickers, onStickers = { vm.stickers = it }, stickersEnabled = state.on(Feature.STICKERS),
+                                onPickPhoto = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, onBg = { vm.paper = it }, onNote = { vm.note = it },
                                 onSend = {
                                     vm.sendDrawing(); tab = Tab.HOME
                                     scope.launch { snackbar.showSnackbar("Sent. It will show on ${state.partnerLabel}'s home screen") }
