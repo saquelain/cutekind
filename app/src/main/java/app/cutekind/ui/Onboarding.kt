@@ -41,7 +41,7 @@ fun OnboardingScreen(
     initialCode: String = "",
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
-    var code by rememberSaveable { mutableStateOf(initialCode) }
+    var code by rememberSaveable(initialCode) { mutableStateOf(initialCode) }
     val nameOk = name.isNotBlank()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -67,7 +67,7 @@ fun OnboardingScreen(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Text("Already have a code from your partner?", style = MaterialTheme.typography.titleMedium)
+            Text(if (initialCode.isNotEmpty()) "Your partner invited you" else "Already have a code from your partner?", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 code, { code = it.uppercase().take(14) }, Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text("Couple code") }, placeholder = { Text("XXXX-XXXX-XXXX") },

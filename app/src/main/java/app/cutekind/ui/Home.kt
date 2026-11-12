@@ -63,6 +63,7 @@ fun HomeScreen(
     onNudge: () -> Unit,
     onAnswer: (String) -> Unit,
     onShareCode: () -> Unit,
+    onJoinCode: () -> Unit,
     onAddWidget: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -87,7 +88,7 @@ fun HomeScreen(
         if (state.partnerName == null) {
             SectionCard {
                 Text("Invite your partner", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Send them this code. They install CuteKind, tap Join my partner and type it in.",
+                Text("Send them the invite. Tapping the link pairs you; they can also type this code in.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     Wire.pretty(state.code.orEmpty()), Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -95,8 +96,9 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Button(onShareCode, Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Share code")
+                    Icon(Icons.Default.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Share invite link")
                 }
+                TextButton(onJoinCode, Modifier.fillMaxWidth()) { Text("My partner sent me a code instead") }
             }
         }
 

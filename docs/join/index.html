@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join me on CuteKind</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg:#FFF7F2; --ink:#3B2A33; --muted:#6E5560; --rose:#E8507A; --card:#fff; --line:#EBD5D6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1B1418; --ink:#F5E6EA; --muted:#D3BCC4; --rose:#FF8FAE; --card:#261C21; --line:#4A3A42; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink);
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding:16px; }
+  main { width:100%; max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:28px; padding:28px 24px; text-align:center; }
+  h1 { font-size:1.5rem; line-height:1.25; margin:12px 0 8px; text-wrap:balance; }
+  p { color:var(--muted); margin:0 0 16px; }
+  .code { font-size:1.5rem; font-weight:700; letter-spacing:.12em; color:var(--rose); margin:8px 0 20px; overflow-wrap:anywhere; }
+  a.btn { display:block; background:var(--rose); color:#fff; text-decoration:none; font-weight:600; padding:14px 16px; border-radius:999px; }
+  @media (prefers-color-scheme: dark) { a.btn { color:#4A0F27; } }
+  small { display:block; color:var(--muted); margin-top:16px; }
+</style>
+</head>
+<body>
+<main>
+  <svg width="44" height="44" viewBox="0 0 24 24" aria-hidden="true"><path fill="#E8507A" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+  <div id="ok" hidden>
+    <h1>Your partner invited you to CuteKind</h1>
+    <p>Draw on each other's home screens. Tap the button to pair.</p>
+    <div class="code" id="code"></div>
+    <a class="btn" id="open" href="#">Open CuteKind and pair</a>
+    <small>Nothing happens? Install CuteKind first, then tap the button again, or type the code above into the app.</small>
+  </div>
+  <div id="bad" hidden>
+    <h1>This invite link is incomplete</h1>
+    <p>Ask your partner to share the invite again from CuteKind.</p>
+  </div>
+</main>
+<script>
+  // The code lives after '#', so it is never sent to this server.
+  var raw = (location.hash || '').slice(1).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (raw.length === 12) {
+    var pretty = raw.match(/.{4}/g).join('-');
+    document.getElementById('code').textContent = pretty;
+    var target = 'intent://join?code=' + pretty + '#Intent;scheme=cutekind;package=app.cutekind;end';
+    document.getElementById('open').href = /Android/i.test(navigator.userAgent) ? target : 'cutekind://join?code=' + pretty;
+    document.getElementById('ok').hidden = false;
+  } else {
+    document.getElementById('bad').hidden = false;
+  }
+</script>
+</body>
+</html>

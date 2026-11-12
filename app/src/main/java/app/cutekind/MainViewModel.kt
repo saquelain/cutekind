@@ -33,6 +33,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var paper by mutableIntStateOf(PAPERS[0])
     var note by mutableStateOf("")
 
+    /** Non-null while the "join with a code" dialog is open; pre-filled when a pairing link was tapped. */
+    var joinPrompt by mutableStateOf<String?>(null)
+
+    /** A pairing link was opened. Ignore it if we are already in that couple. */
+    fun onLink(link: String) {
+        val code = Wire.codeFromLink(link) ?: return
+        if (code != state.value.code) joinPrompt = Wire.pretty(code)
+    }
+
     private fun send(type: String, build: (Envelope) -> Envelope = { it }) {
         val env = Sync.engine(getApplication()).envelope(type, build)
         viewModelScope.launch { Sync.run(getApplication(), env) }
@@ -41,7 +50,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() = viewModelScope.launch { Sync.run(getApplication()) }
 
     fun createCouple(name: String) = pair(name, Wire.newCode(), hello = false)
-    fun join(name: String, code: String) = pair(name, Wire.normalize(code), hello = true)
+    fun join(name: String, code: String) {
+        joinPrompt = null
+        // switching couples starts clean: the old code's drawings and answers do not carry over
+        repo.update { AppState(deviceId = it.deviceId, features = it.features, relay = it.relay) }
+        pair(name, Wire.normalize(code), hello = true)
+    }
 
     private fun pair(name: String, code: String, hello: Boolean) {
         repo.update { it.copy(myName = name, code = code, cursor = null) }

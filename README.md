@@ -11,14 +11,24 @@ Android, Kotlin, Jetpack Compose. No account and no server of your own needed.
 
 ## How it works
 
-1. One partner taps **Start a new couple** and gets a 12-character couple code.
-2. The other installs the app, taps **Join my partner** and types the code.
+1. One partner taps **Start a new couple** and then **Share invite link**.
+2. The other installs the app and taps the link, which opens the app with the code filled in.
+   The code can also be typed by hand: on the first screen, on Home ("My partner sent me a code
+   instead") or in Settings ("Join with my partner's code").
 3. Draw something and tap **Send**. It appears in your partner's app and on their widget.
 
 Sync goes through an [ntfy](https://ntfy.sh) relay (changeable in Settings, self-hosting works).
 The couple code never leaves the phones: it derives both the relay topic and an AES-256-GCM key,
 so the relay only sees encrypted text. The app checks for new drawings every 30 seconds while
 open and about every 15 minutes in the background.
+
+## Invite links
+
+The invite link is `https://saquelain.github.io/cutekind/join/#CODE`. The page behind it lives in
+`docs/join` and needs GitHub Pages turned on once: repo **Settings → Pages → Deploy from a branch →
+`/docs`**. The page has one button that opens the app and pairs. The code sits after `#`, so it is
+never sent to the web server. If you fork or rename the repo, change `LINK_BASE` in `Wire.kt` and
+the host in `AndroidManifest.xml`.
 
 ## Features
 

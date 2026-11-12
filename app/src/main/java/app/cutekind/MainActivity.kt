@@ -34,6 +34,7 @@ import app.cutekind.ui.AppScaffold
 import app.cutekind.ui.CuteKindTheme
 import app.cutekind.ui.DrawScreen
 import app.cutekind.ui.HomeScreen
+import app.cutekind.ui.JoinDialog
 import app.cutekind.ui.MemoriesScreen
 import app.cutekind.ui.OnboardingScreen
 import app.cutekind.ui.SettingsScreen
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Sync.schedule(this)
+        if (savedInstanceState == null) intent?.dataString?.let(vm::onLink)
         setContent {
             CuteKindTheme {
                 val state by vm.state.collectAsStateWithLifecycle()
@@ -73,7 +75,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (!state.paired) {
-                    OnboardingScreen(onCreate = vm::createCouple, onJoin = vm::join, initialName = state.myName)
+                    OnboardingScreen(onCreate = vm::createCouple, onJoin = vm::join, initialName = state.myName, initialCode = vm.joinPrompt.orEmpty())
                 } else {
                     if (tab == Tab.MEMORIES && !state.on(Feature.MEMORIES)) tab = Tab.HOME
                     AppScaffold(state, tab, { tab = it }, snackbar) { m ->
@@ -81,7 +83,7 @@ class MainActivity : ComponentActivity() {
                             Tab.HOME -> HomeScreen(
                                 state, now, onDraw = { tab = Tab.DRAW },
                                 onNudge = { vm.nudge(); scope.launch { snackbar.showSnackbar("Heart sent to ${state.partnerLabel}") } },
-                                onAnswer = vm::answer, onShareCode = ::shareCode, onAddWidget = ::addWidget, modifier = m,
+                                onAnswer = vm::answer, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, modifier = m,
                             )
                             Tab.DRAW -> DrawScreen(
                                 vm.strokes, vm.paper, vm.note, state.partnerLabel,
@@ -96,22 +98,37 @@ class MainActivity : ComponentActivity() {
                             Tab.MEMORIES -> MemoriesScreen(state, now, m)
                             Tab.SETTINGS -> SettingsScreen(
                                 state, onFeature = vm::setFeature, onName = vm::setName, onAnniversary = vm::setAnniversary,
-                                onRelay = vm::setRelay, onShareCode = ::shareCode, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m,
+                                onRelay = vm::setRelay, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m,
                             )
                         }
+                    }
+                    vm.joinPrompt?.let { prefill ->
+                        JoinDialog(
+                            initialCode = prefill, currentCode = state.code,
+                            losesHistory = state.received.isNotEmpty() || state.sent.isNotEmpty(),
+                            onJoin = { code -> vm.join(state.myName, code); tab = Tab.HOME },
+                            onDismiss = { vm.joinPrompt = null },
+                        )
                     }
                 }
             }
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.dataString?.let(vm::onLink)
+    }
+
     override fun onStart() { super.onStart(); Sync.appInForeground = true }
     override fun onStop() { super.onStop(); Sync.appInForeground = false }
 
     private fun shareCode() {
-        val code = Wire.pretty(vm.state.value.code ?: return)
-        val text = "Join me on CuteKind so we can draw on each other's home screens. Our couple code: $code"
-        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share couple code"))
+        val code = vm.state.value.code ?: return
+        val text = "Join me on CuteKind so we can draw on each other's home screens.\n\n" +
+            "Tap to pair with me: ${Wire.link(code)}\n\n" +
+            "Or open the app and enter our couple code: ${Wire.pretty(code)}"
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share invite"))
     }
 
     private fun addWidget() {

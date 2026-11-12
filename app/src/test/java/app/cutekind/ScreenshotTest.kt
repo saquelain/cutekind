@@ -9,8 +9,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -32,6 +44,7 @@ import app.cutekind.ui.AppScaffold
 import app.cutekind.ui.CuteKindTheme
 import app.cutekind.ui.DrawScreen
 import app.cutekind.ui.HomeScreen
+import app.cutekind.ui.JoinCard
 import app.cutekind.ui.MemoriesScreen
 import app.cutekind.ui.OnboardingScreen
 import app.cutekind.ui.SettingsScreen
@@ -61,7 +74,7 @@ class ScreenshotTest {
 
     @Composable
     private fun Home(state: AppState, onAnswer: (String) -> Unit = {}) =
-        AppScaffold(state, Tab.HOME, {}) { m -> HomeScreen(state, now, {}, {}, onAnswer, {}, {}, m) }
+        AppScaffold(state, Tab.HOME, {}) { m -> HomeScreen(state, now, {}, {}, onAnswer, {}, {}, {}, m) }
 
     @Test fun onboarding() = shot("01_onboarding") { OnboardingScreen({}, { _, _ -> }, initialName = "Sam") }
 
@@ -116,7 +129,7 @@ class ScreenshotTest {
         compose.setContent {
             CuteKindTheme {
                 AppScaffold(state, Tab.SETTINGS, {}) { m ->
-                    SettingsScreen(state, { f, on -> state = state.copy(features = state.features + (f.name to on)) }, {}, {}, {}, {}, {}, {}, m)
+                    SettingsScreen(state, { f, on -> state = state.copy(features = state.features + (f.name to on)) }, {}, {}, {}, {}, {}, {}, {}, m)
                 }
             }
         }
@@ -128,6 +141,47 @@ class ScreenshotTest {
             assertEquals(f.default, state.on(f))
         }
         compose.onRoot().captureRoboImage("screenshots/09_settings.png")
+    }
+
+    @Composable
+    private fun Overlay(content: @Composable () -> Unit) =
+        Box(Modifier.fillMaxSize().background(Color(0x99000000)).padding(28.dp), contentAlignment = Alignment.Center) { content() }
+
+    @Test fun joinWithCodeFromInsideTheApp() {
+        var open by mutableStateOf(false)
+        var joined: String? = null
+        compose.setContent {
+            CuteKindTheme {
+                AppScaffold(Samples.fresh, Tab.HOME, {}) { m -> HomeScreen(Samples.fresh, now, {}, {}, {}, {}, { open = true }, {}, m) }
+                if (open) Overlay { JoinCard("", Samples.fresh.code, false, { joined = it; open = false }, { open = false }) }
+            }
+        }
+        compose.onNodeWithText("My partner sent me a code instead").performClick()
+        compose.onNodeWithText("Join").assertIsNotEnabled()
+        compose.onNodeWithText("Couple code").performTextInput("k7qm-2xhd-9trb")
+        compose.onNodeWithText("That is your own code. Ask your partner for theirs, or send them yours.").assertExists()
+        compose.onNodeWithText("Join").assertIsNotEnabled()
+        compose.onNode(hasSetTextAction() and isFocused()).performTextReplacement("abcd-efgh-2345")
+        compose.onNodeWithText("Join").assertIsEnabled()
+        compose.onRoot().captureRoboImage("screenshots/14_join_dialog.png")
+        compose.onNodeWithText("Join").performClick()
+        assertEquals("ABCD-EFGH-2345", joined)
+    }
+
+    @Test fun inviteLinkPrefillsTheJoinDialog() {
+        compose.setContent {
+            CuteKindTheme {
+                AppScaffold(Samples.paired, Tab.HOME, {}) { m -> HomeScreen(Samples.paired, now, {}, {}, {}, {}, {}, {}, m) }
+                Overlay { JoinCard("ABCD-EFGH-2345", Samples.paired.code, true, {}, {}) }
+            }
+        }
+        compose.onNodeWithText("Pair with your partner?").assertExists()
+        compose.onNodeWithText("Join").assertIsEnabled()
+        compose.onRoot().captureRoboImage("screenshots/15_join_from_link.png")
+    }
+
+    @Test fun inviteLinkPrefillsOnboarding() = shot("16_onboarding_from_link") {
+        OnboardingScreen({}, { _, _ -> }, initialCode = "ABCD-EFGH-2345")
     }
 
     @Test fun memoriesTabFollowsItsSwitch() {

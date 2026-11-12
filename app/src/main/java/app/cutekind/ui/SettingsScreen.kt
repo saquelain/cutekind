@@ -48,6 +48,7 @@ fun SettingsScreen(
     onAnniversary: (Long?) -> Unit,
     onRelay: (String) -> Unit,
     onShareCode: () -> Unit,
+    onJoinCode: () -> Unit,
     onAddWidget: () -> Unit,
     onUnpair: () -> Unit,
     modifier: Modifier = Modifier,
@@ -68,6 +69,7 @@ fun SettingsScreen(
                 LabelValue("Couple code", Wire.pretty(state.code.orEmpty()), Modifier.weight(1f))
                 TextButton(onShareCode) { Text("Share") }
             }
+            OutlinedButton(onJoinCode, Modifier.fillMaxWidth()) { Text("Join with my partner's code") }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LabelValue(
                     "Together since",

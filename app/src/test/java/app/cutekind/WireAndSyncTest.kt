@@ -50,6 +50,16 @@ class WireAndSyncTest {
         assertEquals(Wire.keys("k7qm-2xhd-9trb").topic, Wire.keys(code).topic)
     }
 
+    @Test fun inviteLinksCarryTheCode() {
+        assertEquals("https://saquelain.github.io/cutekind/join/#K7QM-2XHD-9TRB", Wire.link(code))
+        assertEquals(code, Wire.codeFromLink(Wire.link(code)))
+        assertEquals(code, Wire.codeFromLink("cutekind://join?code=K7QM-2XHD-9TRB"))
+        assertEquals(code, Wire.codeFromLink("cutekind://join?code=k7qm2xhd9trb&x=1"))
+        assertNull(Wire.codeFromLink("https://saquelain.github.io/cutekind/join/"))
+        assertNull(Wire.codeFromLink("https://saquelain.github.io/cutekind/join/#K7QM"))
+        assertNull(Wire.codeFromLink("cutekind://join?code=K7QM-2XHD-9TRB-EXTRA-STUFF"))
+    }
+
     @Test fun bigDrawingIsChunkedEncryptedAndRestored() {
         val keys = Wire.keys(code)
         val rnd = java.util.Random(7)

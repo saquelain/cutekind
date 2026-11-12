@@ -29,6 +29,22 @@ object Wire {
     fun normalize(code: String): String = code.uppercase().filter { it in ALPHABET }
     fun isValid(code: String): Boolean = normalize(code).length == 12
     fun pretty(code: String): String = normalize(code).chunked(4).joinToString("-")
+    const val LINK_BASE = "https://saquelain.github.io/cutekind/join/"
+
+    /** The tap-to-pair link. The code sits after '#', so it is never sent to the web server. */
+    fun link(code: String): String = LINK_BASE + "#" + pretty(code)
+
+    /** Pulls a couple code out of a pairing link (https or cutekind://), or null if there is none. */
+    fun codeFromLink(link: String): String? {
+        val tail = when {
+            "code=" in link -> link.substringAfter("code=")
+            "#" in link -> link.substringAfter('#')
+            else -> return null
+        }
+        val raw = tail.takeWhile { it.isLetterOrDigit() || it == '-' }
+        return normalize(raw).takeIf { raw.length <= 14 && isValid(raw) }
+    }
+
     fun newId(): String = ByteArray(9).also(random::nextBytes).let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
 
     @Synchronized
