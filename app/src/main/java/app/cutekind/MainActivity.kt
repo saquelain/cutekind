@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import app.cutekind.data.Feature
+import app.cutekind.sync.LiveService
 import app.cutekind.sync.Sync
 import app.cutekind.sync.Wire
 import app.cutekind.ui.AppScaffold
@@ -74,6 +75,14 @@ class MainActivity : ComponentActivity() {
                     ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
 
+                // Battery savers cut the live connection when the phone sleeps; ask once to be left running.
+                LaunchedEffect(state.paired, state.on(Feature.INSTANT)) {
+                    if (state.paired && state.on(Feature.INSTANT) && !state.askedBattery && !LiveService.unrestricted(this@MainActivity)) {
+                        vm.markBatteryAsked()
+                        allowBackground()
+                    }
+                }
+
                 if (!state.paired) {
                     OnboardingScreen(onCreate = vm::createCouple, onJoin = vm::join, initialName = state.myName, initialCode = vm.joinPrompt.orEmpty())
                 } else {
@@ -99,6 +108,7 @@ class MainActivity : ComponentActivity() {
                             Tab.SETTINGS -> SettingsScreen(
                                 state, onFeature = vm::setFeature, onName = vm::setName, onAnniversary = vm::setAnniversary,
                                 onRelay = vm::setRelay, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m, now = now, onSync = { now = System.currentTimeMillis(); vm.refresh() },
+                                backgroundAllowed = LiveService.unrestricted(this@MainActivity), onAllowBackground = ::allowBackground,
                             )
                         }
                     }
@@ -120,7 +130,7 @@ class MainActivity : ComponentActivity() {
         intent.dataString?.let(vm::onLink)
     }
 
-    override fun onStart() { super.onStart(); Sync.appInForeground = true }
+    override fun onStart() { super.onStart(); Sync.appInForeground = true; Sync.schedule(this) }
     override fun onStop() { super.onStop(); Sync.appInForeground = false }
 
     private fun shareCode() {
@@ -129,6 +139,13 @@ class MainActivity : ComponentActivity() {
             "Tap to pair with me: ${Wire.link(code)}\n\n" +
             "Or open the app and enter our couple code: ${Wire.pretty(code)}"
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share invite"))
+    }
+
+    @android.annotation.SuppressLint("BatteryLife")
+    private fun allowBackground() {
+        runCatching {
+            startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$packageName")))
+        }
     }
 
     private fun addWidget() {

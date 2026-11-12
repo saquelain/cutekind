@@ -54,6 +54,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     now: Long = System.currentTimeMillis(),
     onSync: () -> Unit = {},
+    backgroundAllowed: Boolean = true,
+    onAllowBackground: () -> Unit = {},
 ) {
     var pickDate by rememberSaveable { mutableStateOf(false) }
     var confirmUnpair by rememberSaveable { mutableStateOf(false) }
@@ -91,9 +93,19 @@ fun SettingsScreen(
                 mins < 60 -> "$mins min ago"
                 else -> "${mins / 60} h ago"
             })
+            LabelValue("Instant delivery", when {
+                !state.on(Feature.INSTANT) -> "Off"
+                state.live -> "Connected"
+                else -> "Reconnecting…"
+            })
             LabelValue("Waiting to be sent", if (state.outbox.isEmpty()) "Nothing" else "${state.outbox.size}")
             state.lastError?.let { Text(it.replaceFirstChar(Char::uppercase), color = MaterialTheme.colorScheme.error) }
             OutlinedButton(onSync, Modifier.fillMaxWidth()) { Text("Sync now") }
+            if (state.on(Feature.INSTANT) && !backgroundAllowed) {
+                Text("Your phone's battery saver can pause instant delivery while the screen is off.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onAllowBackground, Modifier.fillMaxWidth()) { Text("Let CuteKind run in the background") }
+            }
         }
 
         SectionCard {

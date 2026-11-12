@@ -5,7 +5,12 @@ import app.cutekind.data.DayAnswers
 import app.cutekind.data.Drawing
 import app.cutekind.data.Envelope
 import app.cutekind.data.Repo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -47,60 +52,104 @@ class SyncEngine(
             val code = start.code ?: return@withLock emptyList()
             val keys = Wire.keys(code)
             val events = ArrayList<SyncEvent>()
-            var error: String? = null
 
             // Sending and receiving fail independently: a message that cannot go out
             // must never stop the partner's drawings from coming in.
-            fun flush() {
-                for (env in repo.state.value.outbox) {
-                    try {
-                        Wire.encode(env, keys).forEach { relay.publish(start.relay, keys.topic, it) }
-                        repo.update { s -> s.copy(outbox = s.outbox.filterNot { it.id == env.id }) }
-                    } catch (e: Exception) {
-                        error = "Not sent yet: " + describe(e)
-                        break
-                    }
-                }
-            }
-            flush()
-
+            var error = flush(start.relay, keys)
             try {
-                val messages = relay.poll(start.relay, keys.topic, start.cursor)
-                for (m in messages) {
-                    val chunk = Wire.parseChunk(m.body)
-                    if (chunk != null) {
-                        val key = "${chunk.id}|${chunk.count}"
-                        val have = (repo.state.value.partials[key] ?: emptyMap()) + (chunk.index.toString() to chunk.data)
-                        if (have.size == chunk.count) {
-                            val text = (0 until chunk.count).joinToString("") { have[it.toString()]!! }
-                            repo.update { it.copy(partials = it.partials - key) }
-                            Wire.decode(text, keys)?.let { env ->
-                                val event = apply(env)
-                                event?.let(events::add)
-                                // answer a first hello once so the new partner learns our name too
-                                if (event is SyncEvent.Joined && env.text != "re") {
-                                    val reply = envelope("hello") { it.copy(text = "re", anniv = repo.state.value.anniversary) }
-                                    repo.update { it.copy(outbox = it.outbox + reply) }
-                                }
-                            }
-                        } else {
-                            repo.update { s ->
-                                // keep only the most recent few half-received messages
-                                val kept = (s.partials - key).entries.toList().takeLast(8).associate { it.key to it.value }
-                                s.copy(partials = kept + (key to have))
-                            }
-                        }
-                    }
-                    repo.update { it.copy(cursor = m.id) }
-                }
+                relay.poll(start.relay, keys.topic, start.cursor).forEach { m -> process(m, keys)?.let(events::add) }
                 repo.update { it.copy(lastSyncTs = now()) }
             } catch (e: Exception) {
                 error = error ?: ("Could not check for new drawings: " + describe(e))
             }
-            if (error == null) flush() // replies queued while receiving
+            if (error == null) error = flush(start.relay, keys) // replies queued while receiving
             repo.update { it.copy(lastError = error) }
             events
         }
+    }
+
+    /**
+     * Instant delivery: holds a stream open to the relay and applies each message the moment it
+     * arrives. Runs until cancelled, reconnecting with a growing pause when the connection drops.
+     */
+    suspend fun listen(onEvents: suspend (List<SyncEvent>) -> Unit) = withContext(Dispatchers.IO) {
+        var pause = 1_000L
+        while (isActive) {
+            val start = repo.state.value
+            val code = start.code ?: return@withContext
+            val keys = Wire.keys(code)
+            var stream: RelayStream? = null
+            // a blocked read cannot be cancelled, so a watcher closes the connection under it
+            val closer = launch { try { awaitCancellation() } finally { stream?.close() } }
+            try {
+                stream = relay.open(start.relay, keys.topic, start.cursor)
+                repo.update { it.copy(live = true) }
+                while (isActive) {
+                    val m = stream.next() ?: break
+                    pause = 1_000L
+                    val event = mutex.withLock {
+                        process(m, keys).also {
+                            flush(start.relay, keys)
+                            repo.update { s -> s.copy(lastSyncTs = now()) }
+                        }
+                    }
+                    if (event != null) onEvents(listOf(event))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // dropped connection: fall through to the pause and reconnect
+            } finally {
+                closer.cancel()
+                stream?.close()
+                repo.update { it.copy(live = false) }
+            }
+            delay(pause)
+            pause = (pause * 2).coerceAtMost(60_000L)
+        }
+    }
+
+    /** Sends everything waiting, oldest first. Returns a description of the problem, or null if all went out. */
+    private fun flush(server: String, keys: Keys): String? {
+        for (env in repo.state.value.outbox) {
+            try {
+                Wire.encode(env, keys).forEach { relay.publish(server, keys.topic, it) }
+                repo.update { s -> s.copy(outbox = s.outbox.filterNot { it.id == env.id }) }
+            } catch (e: Exception) {
+                return "Not sent yet: " + describe(e)
+            }
+        }
+        return null
+    }
+
+    /** Takes one relay message: collects chunks, and once a message is whole, decrypts and applies it. */
+    private fun process(m: RelayMessage, keys: Keys): SyncEvent? {
+        var event: SyncEvent? = null
+        val chunk = Wire.parseChunk(m.body)
+        if (chunk != null) {
+            val key = "${chunk.id}|${chunk.count}"
+            val have = (repo.state.value.partials[key] ?: emptyMap()) + (chunk.index.toString() to chunk.data)
+            if (have.size == chunk.count) {
+                val text = (0 until chunk.count).joinToString("") { have[it.toString()]!! }
+                repo.update { it.copy(partials = it.partials - key) }
+                Wire.decode(text, keys)?.let { env ->
+                    event = apply(env)
+                    // answer a first hello once so the new partner learns our name too
+                    if (event is SyncEvent.Joined && env.text != "re") {
+                        val reply = envelope("hello") { it.copy(text = "re", anniv = repo.state.value.anniversary) }
+                        repo.update { it.copy(outbox = it.outbox + reply) }
+                    }
+                }
+            } else {
+                repo.update { s ->
+                    // keep only the most recent few half-received messages
+                    val kept = (s.partials - key).entries.toList().takeLast(8).associate { it.key to it.value }
+                    s.copy(partials = kept + (key to have))
+                }
+            }
+        }
+        repo.update { it.copy(cursor = m.id) }
+        return event
     }
 
     private fun describe(e: Exception): String = (e as? RelayException)?.message ?: "no connection. Will retry."

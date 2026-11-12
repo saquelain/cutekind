@@ -19,8 +19,12 @@ Android, Kotlin, Jetpack Compose. No account and no server of your own needed.
 
 Sync goes through an [ntfy](https://ntfy.sh) relay (changeable in Settings, self-hosting works).
 The couple code never leaves the phones: it derives both the relay topic and an AES-256-GCM key,
-so the relay only sees encrypted text. The app checks for new drawings every 30 seconds while
-open and about every 15 minutes in the background.
+so the relay only sees encrypted text.
+
+Delivery is instant: a small foreground service holds a live connection to the relay, so a
+drawing reaches the partner's widget within seconds even when the app is closed. This shows a
+silent permanent notification, and works best with battery optimisation turned off for the app
+(the app asks once). A 15-minute background check runs as a backup.
 
 ## Invite links
 

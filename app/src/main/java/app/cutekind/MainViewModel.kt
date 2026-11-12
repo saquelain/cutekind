@@ -84,10 +84,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setFeature(f: Feature, on: Boolean) {
         repo.update { it.copy(features = it.features + (f.name to on)) }
-        if (f == Feature.BACKGROUND_SYNC) Sync.schedule(getApplication())
+        if (f == Feature.BACKGROUND_SYNC || f == Feature.INSTANT) Sync.schedule(getApplication())
         PartnerWidget.updateAll(getApplication())
     }
 
+    fun markBatteryAsked() { repo.update { it.copy(askedBattery = true) } }
     fun setName(name: String) { repo.update { it.copy(myName = name) } }
     fun setRelay(url: String) { repo.update { it.copy(relay = url, cursor = null) } }
 

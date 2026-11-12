@@ -10,9 +10,15 @@ import java.net.URL
 class RelayMessage(val id: String, val body: String)
 class RelayException(val code: Int, message: String) : IOException(message)
 
+/** An open subscription. [next] blocks until a message arrives; null means the server ended the stream. */
+interface RelayStream : java.io.Closeable {
+    fun next(): RelayMessage?
+}
+
 interface Relay {
     fun publish(server: String, topic: String, body: String)
     fun poll(server: String, topic: String, since: String?): List<RelayMessage>
+    fun open(server: String, topic: String, since: String?): RelayStream
 }
 
 /**
@@ -56,17 +62,32 @@ class NtfyRelay : Relay {
         c.inputStream.use { it.readBytes() }
     }
 
+    private fun parse(line: String): RelayMessage? = runCatching {
+        val o = Json.parseToJsonElement(line).jsonObject
+        if (o["event"]?.jsonPrimitive?.content != "message") null
+        else RelayMessage(o["id"]!!.jsonPrimitive.content, o["message"]?.jsonPrimitive?.content ?: "")
+    }.getOrNull()
+
     override fun poll(server: String, topic: String, since: String?): List<RelayMessage> {
         val c = open("${server.trimEnd('/')}/$topic/json?poll=1&since=${since ?: "all"}")
         c.check()
-        return c.inputStream.bufferedReader().useLines { lines ->
-            lines.filter { it.isNotBlank() }.mapNotNull { line ->
-                runCatching {
-                    val o = Json.parseToJsonElement(line).jsonObject
-                    if (o["event"]?.jsonPrimitive?.content != "message") null
-                    else RelayMessage(o["id"]!!.jsonPrimitive.content, o["message"]?.jsonPrimitive?.content ?: "")
-                }.getOrNull()
-            }.toList()
+        return c.inputStream.bufferedReader().useLines { lines -> lines.mapNotNull(::parse).toList() }
+    }
+
+    override fun open(server: String, topic: String, since: String?): RelayStream {
+        val c = open("${server.trimEnd('/')}/$topic/json?since=${since ?: "all"}")
+        // the server sends a keepalive line every 45 seconds; two missed ones mean the link is dead
+        c.readTimeout = 100_000
+        c.check()
+        val reader = c.inputStream.bufferedReader()
+        return object : RelayStream {
+            override fun next(): RelayMessage? {
+                while (true) {
+                    val line = reader.readLine() ?: return null
+                    parse(line)?.let { return it }
+                }
+            }
+            override fun close() { runCatching { c.disconnect() } }
         }
     }
 }

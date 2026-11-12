@@ -39,7 +39,11 @@ object Sync {
 
     suspend fun run(context: Context, outgoing: Envelope? = null) {
         val app = context.applicationContext
-        val events = if (outgoing != null) engine(app).send(outgoing) else engine(app).sync()
+        deliver(app, if (outgoing != null) engine(app).send(outgoing) else engine(app).sync())
+    }
+
+    /** Refresh the widget and tell the user about whatever just arrived. */
+    fun deliver(app: Context, events: List<SyncEvent>) {
         PartnerWidget.updateAll(app)
         val state = Repo.get(app).state.value
         if (!state.on(Feature.NOTIFICATIONS)) return
@@ -71,9 +75,10 @@ object Sync {
         nm.notify(id, b.build())
     }
 
-    /** Turn the periodic background check on or off to match the Settings switch. */
+    /** Turn the live connection and the periodic background check on or off to match Settings. */
     fun schedule(context: Context) {
         val state = Repo.get(context).state.value
+        LiveService.sync(context, state.paired && state.on(Feature.INSTANT))
         val wm = WorkManager.getInstance(context)
         if (state.paired && state.on(Feature.BACKGROUND_SYNC)) {
             val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)

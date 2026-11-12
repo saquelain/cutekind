@@ -50,6 +50,7 @@ data class Envelope(
 
 /** Every user-facing feature has its own switch in Settings. */
 enum class Feature(val title: String, val desc: String, val default: Boolean = true) {
+    INSTANT("Instant delivery", "Keep a live connection so drawings arrive within seconds, even when the app is closed. Shows a small permanent notification"),
     DAILY_QUESTION("Daily question", "A new question for the two of you every day"),
     SPICY("Spicy questions", "Mix flirty questions into the daily question. Turn it on for both of you", false),
     REVEAL_LOCK("Answer to reveal", "Hide your partner's answer until you have answered too"),
@@ -61,7 +62,7 @@ enum class Feature(val title: String, val desc: String, val default: Boolean = t
     REPLAY("Stroke replay", "Watch a drawing appear stroke by stroke, the way it was drawn"),
     MEMORIES("Memories", "Keep a gallery of the drawings you have sent each other"),
     NOTIFICATIONS("Notifications", "Tell me when my partner sends something"),
-    BACKGROUND_SYNC("Background sync", "Check for new drawings about every 15 minutes while the app is closed"),
+    BACKGROUND_SYNC("Background sync", "Also check for new drawings about every 15 minutes, as a backup"),
 }
 
 const val DEFAULT_RELAY = "https://ntfy.sh"
@@ -86,6 +87,8 @@ data class AppState(
     val outbox: List<Envelope> = emptyList(),
     val lastSyncTs: Long = 0,
     val lastError: String? = null,
+    val live: Boolean = false,                  // a live connection to the relay is open right now
+    val askedBattery: Boolean = false,
 ) {
     val paired get() = code != null
     fun on(f: Feature) = features[f.name] ?: f.default

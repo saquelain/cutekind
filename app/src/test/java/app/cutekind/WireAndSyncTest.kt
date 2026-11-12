@@ -10,6 +10,13 @@ import app.cutekind.sync.NtfyRelay
 import app.cutekind.sync.Relay
 import app.cutekind.sync.RelayException
 import app.cutekind.sync.RelayMessage
+import app.cutekind.sync.RelayStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import app.cutekind.sync.SyncEngine
 import app.cutekind.sync.SyncEvent
 import app.cutekind.sync.Wire
@@ -30,8 +37,25 @@ class FakeRelay : Relay {
         if (down) throw IOException("offline")
         if (refusePublish) throw RelayException(429, "the relay server is limiting this network (daily message quota reached). Will keep retrying.")
         check(body.length <= 4096) { "ntfy rejects bodies over 4096 bytes" }
-        log.add(RelayMessage("m${log.size + 1}", body))
+        val m = RelayMessage("m${log.size + 1}", body)
+        synchronized(this) { log.add(m); streams.forEach { it.put(m) } }
     }
+
+    // live subscriptions: backlog first, then every new message as it is published
+    private val streams = java.util.concurrent.CopyOnWriteArrayList<java.util.concurrent.LinkedBlockingQueue<RelayMessage>>()
+    private val end = RelayMessage("", "")
+    var opened = 0
+    override fun open(server: String, topic: String, since: String?): RelayStream {
+        if (down) throw IOException("offline")
+        val q = java.util.concurrent.LinkedBlockingQueue<RelayMessage>()
+        synchronized(this) { opened++; log.drop(log.indexOfFirst { it.id == since } + 1).forEach(q::put); streams.add(q) }
+        return object : RelayStream {
+            override fun next(): RelayMessage? = q.take().takeIf { it !== end }
+            override fun close() { streams.remove(q); q.put(end) }
+        }
+    }
+    /** Simulates the network dropping every open connection. */
+    fun dropConnections() = streams.toList().forEach { streams.remove(it); it.put(end) }
     override fun poll(server: String, topic: String, since: String?): List<RelayMessage> {
         if (down) throw IOException("offline")
         return log.drop(log.indexOfFirst { it.id == since } + 1)
@@ -149,6 +173,41 @@ class WireAndSyncTest {
         eb.sync()
         assertEquals("newest", b.state.value.received.single().id)
         assertEquals(1, b.state.value.nudgesReceived)
+    }
+
+    private suspend fun until(what: String, ms: Long = 5_000, check: () -> Boolean) =
+        runCatching { withTimeout(ms) { while (!check()) delay(10) } }.onFailure { throw AssertionError("timed out waiting for: $what") }
+
+    @Test fun liveConnectionDeliversInstantlyAndReconnects() = runBlocking {
+        val relay = FakeRelay()
+        val (a, ea) = device("a", "Sam", relay)
+        val (b, eb) = device("b", "Maya", relay)
+        ea.send(ea.envelope("draw") { it.copy(drawing = Samples.drawing("beforeListening", "Sam", Samples.NOW)) })
+
+        val events = java.util.concurrent.CopyOnWriteArrayList<SyncEvent>()
+        val listening = CoroutineScope(Dispatchers.IO).launch { eb.listen { events.addAll(it) } }
+        until("backlog delivered on connect") { b.state.value.received.any { it.id == "beforeListening" } }
+        assertTrue(b.state.value.live)
+
+        // a multi-chunk drawing sent now shows up without Maya's phone polling at all
+        val rnd = java.util.Random(3)
+        val big = (0 until 60).map { Samples.heartStrokes[0].copy(p = List(240) { rnd.nextInt(2000) }) }
+        val sentAt = System.nanoTime()
+        ea.send(ea.envelope("draw") { it.copy(drawing = Samples.drawing("live", "Sam", Samples.NOW + 1, strokes = big)) })
+        until("live drawing") { b.state.value.received.firstOrNull()?.id == "live" }
+        assertTrue("arrived in well under a second", (System.nanoTime() - sentAt) / 1_000_000 < 1_000)
+        until("event raised") { events.any { it is SyncEvent.NewDrawing && it.drawing.id == "live" } }
+
+        // the connection drops; it comes back by itself and nothing sent meanwhile is lost
+        relay.dropConnections()
+        until("marked disconnected") { !b.state.value.live }
+        ea.send(ea.envelope("nudge"))
+        until("reconnected and caught up", 8_000) { b.state.value.nudgesReceived == 1 }
+        assertTrue(relay.opened >= 2)
+        assertEquals("no duplicates after reconnecting", 2, b.state.value.received.size)
+
+        listening.cancelAndJoin()
+        assertFalse(b.state.value.live)
     }
 
     @Test fun simplifyKeepsTheShapeWithFarFewerPoints() {
