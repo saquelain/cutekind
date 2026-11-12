@@ -5,6 +5,7 @@ import app.cutekind.data.Days
 import app.cutekind.data.Feature
 import app.cutekind.data.Questions
 import app.cutekind.data.Repo
+import app.cutekind.draw.simplify
 import app.cutekind.sync.NtfyRelay
 import app.cutekind.sync.Relay
 import app.cutekind.sync.RelayException
@@ -24,8 +25,10 @@ import java.io.IOException
 class FakeRelay : Relay {
     val log = ArrayList<RelayMessage>()
     var down = false
+    var refusePublish = false // what a rate-limited network looks like: reading works, sending does not
     override fun publish(server: String, topic: String, body: String) {
         if (down) throw IOException("offline")
+        if (refusePublish) throw RelayException(429, "the relay server is limiting this network (daily message quota reached). Will keep retrying.")
         check(body.length <= 4096) { "ntfy rejects bodies over 4096 bytes" }
         log.add(RelayMessage("m${log.size + 1}", body))
     }
@@ -121,6 +124,45 @@ class WireAndSyncTest {
         assertEquals("d1", b.state.value.received.single().id)
     }
 
+    @Test fun aFailedSendNeverBlocksReceiving() = runBlocking {
+        val relay = FakeRelay()
+        val (a, ea) = device("a", "Sam", relay)
+        val (b, eb) = device("b", "Maya", relay)
+        eb.send(eb.envelope("draw") { it.copy(drawing = Samples.drawing("fromMaya1", "Maya", Samples.NOW)) })
+
+        relay.refusePublish = true
+        ea.send(ea.envelope("draw") { it.copy(drawing = Samples.drawing("stuck", "Sam", Samples.NOW)) })
+        assertEquals("Maya's drawing still arrives", "fromMaya1", a.state.value.received.single().id)
+        assertTrue(a.state.value.lastError!!.startsWith("Not sent yet"))
+        assertTrue(a.state.value.lastError!!.contains("daily message quota reached"))
+
+        // a newer drawing replaces the one that never went out; hearts and answers stay queued
+        ea.send(ea.envelope("nudge"))
+        ea.send(ea.envelope("draw") { it.copy(drawing = Samples.drawing("newest", "Sam", Samples.NOW + 1)) })
+        assertEquals(listOf("nudge", "draw"), a.state.value.outbox.map { it.type })
+        assertEquals("newest", a.state.value.outbox.last().drawing?.id)
+
+        relay.refusePublish = false
+        ea.sync()
+        assertTrue(a.state.value.outbox.isEmpty())
+        assertNull(a.state.value.lastError)
+        eb.sync()
+        assertEquals("newest", b.state.value.received.single().id)
+        assertEquals(1, b.state.value.nudgesReceived)
+    }
+
+    @Test fun simplifyKeepsTheShapeWithFarFewerPoints() {
+        val line = (0..200).flatMap { listOf(it * 10, 500) }
+        assertEquals(listOf(0, 500, 2000, 500), simplify(line))
+        val corner = (0..100).flatMap { listOf(it * 10, 0) } + (1..100).flatMap { listOf(1000, it * 10) }
+        assertEquals(listOf(0, 0, 1000, 0, 1000, 1000), simplify(corner))
+        val heart = Samples.heartStrokes[0].p
+        val slim = simplify(heart)
+        assertTrue(slim.size < heart.size && slim.size >= 20)
+        assertEquals(heart.take(2), slim.take(2)); assertEquals(heart.takeLast(2), slim.takeLast(2))
+        assertEquals(listOf(5, 5), simplify(listOf(5, 5)))
+    }
+
     @Test fun ntfyRelaySpeaksTheRealProtocol() {
         val stored = ArrayList<String>()
         // a tiny stand-in for an ntfy server: POST /topic stores, GET /topic/json?poll=1&since= lists
@@ -139,7 +181,7 @@ class WireAndSyncTest {
                     }
                     val body = CharArray(length).also { var n = 0; while (n < length) n += input.read(it, n, length - n) }.concatToString()
                     val (status, out) = when {
-                        target.startsWith("/busy") -> 429 to ""
+                        target.startsWith("/busy") -> 429 to """{"code":42908,"http":429,"error":"limit reached: daily message quota reached"}"""
                         method == "POST" -> {
                             stored.add(body)
                             200 to """{"id":"x${stored.size}","time":1,"event":"message","topic":"t","message":"ok"}"""
@@ -164,6 +206,7 @@ class WireAndSyncTest {
             assertEquals(listOf("x2"), relay.poll(url, "t", "x1").map { it.id })
             val busy = runCatching { relay.publish(url, "busy", "x") }.exceptionOrNull()
             assertEquals(429, (busy as RelayException).code)
+            assertTrue(busy.message!!.contains("daily message quota reached"))
         } finally { socket.close(); thread.join(2000) }
     }
 

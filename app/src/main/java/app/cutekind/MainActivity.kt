@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                             Tab.HOME -> HomeScreen(
                                 state, now, onDraw = { tab = Tab.DRAW },
                                 onNudge = { vm.nudge(); scope.launch { snackbar.showSnackbar("Heart sent to ${state.partnerLabel}") } },
-                                onAnswer = vm::answer, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, modifier = m,
+                                onAnswer = vm::answer, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, modifier = m, onRetry = { vm.refresh() },
                             )
                             Tab.DRAW -> DrawScreen(
                                 vm.strokes, vm.paper, vm.note, state.partnerLabel,
@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                             Tab.MEMORIES -> MemoriesScreen(state, now, m)
                             Tab.SETTINGS -> SettingsScreen(
                                 state, onFeature = vm::setFeature, onName = vm::setName, onAnniversary = vm::setAnniversary,
-                                onRelay = vm::setRelay, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m,
+                                onRelay = vm::setRelay, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m, now = now, onSync = { now = System.currentTimeMillis(); vm.refresh() },
                             )
                         }
                     }

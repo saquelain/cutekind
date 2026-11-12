@@ -30,13 +30,17 @@ class NtfyRelay : Relay {
     private fun HttpURLConnection.check() {
         val code = responseCode
         if (code !in 200..299) {
+            // ntfy explains refusals in a small JSON body, e.g. "daily message quota reached"
+            val said = runCatching {
+                Json.parseToJsonElement(errorStream.bufferedReader().readText()).jsonObject["error"]?.jsonPrimitive?.content
+            }.getOrNull()
             disconnect()
             throw RelayException(
                 code,
                 when (code) {
-                    429 -> "The relay is busy (rate limit). Will retry soon."
-                    413 -> "That drawing is too big for the relay."
-                    else -> "Relay error $code"
+                    429 -> "the relay server is limiting this network (${said ?: "too many requests"}). Will keep retrying."
+                    413 -> "that drawing is too big for the relay server."
+                    else -> "the relay server answered $code${said?.let { " ($it)" } ?: ""}. Will retry."
                 },
             )
         }

@@ -21,7 +21,7 @@ class Keys(val topic: String, val key: ByteArray)
 object Wire {
     private const val ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     private const val PREFIX = "ck1"
-    const val CHUNK = 3000
+    const val CHUNK = 4000 // ntfy accepts message bodies up to 4096 bytes
     private val random = SecureRandom()
     private val cache = HashMap<String, Keys>()
 

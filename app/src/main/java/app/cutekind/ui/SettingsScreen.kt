@@ -52,6 +52,8 @@ fun SettingsScreen(
     onAddWidget: () -> Unit,
     onUnpair: () -> Unit,
     modifier: Modifier = Modifier,
+    now: Long = System.currentTimeMillis(),
+    onSync: () -> Unit = {},
 ) {
     var pickDate by rememberSaveable { mutableStateOf(false) }
     var confirmUnpair by rememberSaveable { mutableStateOf(false) }
@@ -78,6 +80,20 @@ fun SettingsScreen(
                 )
                 TextButton({ pickDate = true }) { Text(if (state.anniversary == null) "Set date" else "Change") }
             }
+        }
+
+        SectionCard {
+            Text("Connection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val mins = (now - state.lastSyncTs) / 60_000
+            LabelValue("Last checked for drawings", when {
+                state.lastSyncTs == 0L -> "Never"
+                mins < 1 -> "Just now"
+                mins < 60 -> "$mins min ago"
+                else -> "${mins / 60} h ago"
+            })
+            LabelValue("Waiting to be sent", if (state.outbox.isEmpty()) "Nothing" else "${state.outbox.size}")
+            state.lastError?.let { Text(it.replaceFirstChar(Char::uppercase), color = MaterialTheme.colorScheme.error) }
+            OutlinedButton(onSync, Modifier.fillMaxWidth()) { Text("Sync now") }
         }
 
         SectionCard {

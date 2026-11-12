@@ -28,12 +28,13 @@ import app.cutekind.data.Days
 fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
     var mine by rememberSaveable { mutableStateOf(false) }
     val list = if (mine) state.sent else state.received
+    val waiting = state.outbox.mapNotNull { it.drawing?.id }.toSet()
     LazyVerticalGrid(
-        GridCells.Fixed(2), modifier,
+        GridCells.Adaptive(150.dp), modifier,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item(span = { GridItemSpan(2) }) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Memories", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -43,7 +44,7 @@ fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
             }
         }
         if (list.isEmpty()) {
-            item(span = { GridItemSpan(2) }) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
                     if (mine) "Drawings you send are kept here." else "Drawings from ${state.partnerLabel} are kept here.",
                     Modifier.fillMaxWidth().padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -54,8 +55,9 @@ fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 DrawingView(d.strokes, d.bg, Modifier.fillMaxWidth(), corner = 18.dp)
                 Text(
-                    d.note.ifBlank { Days.ago(d.ts, now).replaceFirstChar(Char::uppercase) },
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (d.id in waiting) "Not sent yet" else d.note.ifBlank { Days.ago(d.ts, now).replaceFirstChar(Char::uppercase) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (d.id in waiting) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }

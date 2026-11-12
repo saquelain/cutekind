@@ -1,6 +1,13 @@
 package app.cutekind.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Create
@@ -42,9 +49,19 @@ fun AppScaffold(
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 Tab.entries.filter { it != Tab.MEMORIES || state.on(Feature.MEMORIES) }.forEach { t ->
-                    NavigationBarItem(t == tab, { onTab(t) }, icon = { Icon(t.icon, null) }, label = { Text(t.label) })
+                    NavigationBarItem(t == tab, { onTab(t) }, icon = { Icon(t.icon, null) }, label = {
+                        // one line always; very large system text is capped here so four tabs still fit
+                        val size = with(LocalDensity.current) { (12.dp * fontScale.coerceAtMost(1.15f)).toSp() }
+                        Text(t.label, fontSize = size, maxLines = 1, softWrap = false)
+                    })
                 }
             }
         },
-    ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }
+    ) { padding ->
+        // imePadding shrinks the content when the keyboard opens, so the focused field scrolls into view;
+        // the width cap keeps tablets and landscape from stretching everything edge to edge.
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
+            content(Modifier.fillMaxSize().widthIn(max = 720.dp))
+        }
+    }
 }

@@ -31,9 +31,12 @@ class SyncEngine(
         return build(Envelope(id = Wire.newId(), from = s.deviceId, name = s.myName, ts = now(), type = type))
     }
 
-    /** Queue a message; it is delivered now if possible, otherwise on the next sync. */
+    /**
+     * Queue a message; it is delivered now if possible, otherwise on the next sync.
+     * Only the newest drawing matters, so a new one replaces any that is still waiting to go out.
+     */
     suspend fun send(env: Envelope): List<SyncEvent> {
-        repo.update { it.copy(outbox = it.outbox + env) }
+        repo.update { s -> s.copy(outbox = s.outbox.filterNot { env.type == "draw" && it.type == "draw" } + env) }
         return sync()
     }
 
@@ -44,11 +47,24 @@ class SyncEngine(
             val code = start.code ?: return@withLock emptyList()
             val keys = Wire.keys(code)
             val events = ArrayList<SyncEvent>()
-            try {
-                for (env in start.outbox) {
-                    Wire.encode(env, keys).forEach { relay.publish(start.relay, keys.topic, it) }
-                    repo.update { s -> s.copy(outbox = s.outbox.filterNot { it.id == env.id }) }
+            var error: String? = null
+
+            // Sending and receiving fail independently: a message that cannot go out
+            // must never stop the partner's drawings from coming in.
+            fun flush() {
+                for (env in repo.state.value.outbox) {
+                    try {
+                        Wire.encode(env, keys).forEach { relay.publish(start.relay, keys.topic, it) }
+                        repo.update { s -> s.copy(outbox = s.outbox.filterNot { it.id == env.id }) }
+                    } catch (e: Exception) {
+                        error = "Not sent yet: " + describe(e)
+                        break
+                    }
                 }
+            }
+            flush()
+
+            try {
                 val messages = relay.poll(start.relay, keys.topic, start.cursor)
                 for (m in messages) {
                     val chunk = Wire.parseChunk(m.body)
@@ -64,7 +80,7 @@ class SyncEngine(
                                 // answer a first hello once so the new partner learns our name too
                                 if (event is SyncEvent.Joined && env.text != "re") {
                                     val reply = envelope("hello") { it.copy(text = "re", anniv = repo.state.value.anniversary) }
-                                    Wire.encode(reply, keys).forEach { relay.publish(start.relay, keys.topic, it) }
+                                    repo.update { it.copy(outbox = it.outbox + reply) }
                                 }
                             }
                         } else {
@@ -77,14 +93,17 @@ class SyncEngine(
                     }
                     repo.update { it.copy(cursor = m.id) }
                 }
-                repo.update { it.copy(lastSyncTs = now(), lastError = null) }
+                repo.update { it.copy(lastSyncTs = now()) }
             } catch (e: Exception) {
-                val msg = (e as? RelayException)?.message ?: "No connection. Will retry."
-                repo.update { it.copy(lastError = msg) }
+                error = error ?: ("Could not check for new drawings: " + describe(e))
             }
+            if (error == null) flush() // replies queued while receiving
+            repo.update { it.copy(lastError = error) }
             events
         }
     }
+
+    private fun describe(e: Exception): String = (e as? RelayException)?.message ?: "no connection. Will retry."
 
     private fun apply(env: Envelope): SyncEvent? {
         var event: SyncEvent? = null

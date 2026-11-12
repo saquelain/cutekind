@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
@@ -100,25 +101,56 @@ class ScreenshotTest {
 
     @Test fun homeDark() = shot("06_home_dark", dark = true) { Home(Samples.paired.copy(features = mapOf(Feature.SPICY.name to true))) }
 
+    @Composable
+    private fun Draw(onStroke: (Stroke) -> Unit = {}) {
+        var list by remember { mutableStateOf(Samples.heartStrokes.take(1)) }
+        AppScaffold(Samples.paired, Tab.DRAW, {}) { m ->
+            DrawScreen(list, 0xFFFFE1EA.toInt(), "Miss you", "Maya", { onStroke(it); list = list + it }, {}, {}, {}, {}, {}, m)
+        }
+    }
+
     @Test fun drawScreenRecordsStrokes() {
         val strokes = ArrayList<Stroke>()
-        compose.setContent {
-            CuteKindTheme {
-                var list by remember { mutableStateOf(Samples.heartStrokes.take(1)) }
-                AppScaffold(Samples.paired, Tab.DRAW, {}) { m ->
-                    DrawScreen(list, 0xFFFFE1EA.toInt(), "Miss you", "Maya", { strokes.add(it); list = list + it }, {}, {}, {}, {}, {}, m)
-                }
-            }
-        }
+        compose.setContent { CuteKindTheme { Draw(strokes::add) } }
         compose.onNodeWithContentDescription("Drawing canvas").performTouchInput {
             swipe(Offset(width * 0.2f, height * 0.85f), Offset(width * 0.8f, height * 0.85f), 300)
         }
         compose.onNodeWithContentDescription("Drawing canvas").performTouchInput { down(Offset(width * 0.5f, height * 0.1f)); up() }
         assertEquals(2, strokes.size)
-        assertTrue("a swipe records many points", strokes[0].p.size > 10)
+        assertEquals("a straight swipe is stored as just its two ends", 4, strokes[0].p.size)
+        assertTrue("stroke runs left to right", strokes[0].p[0] in 350..450 && strokes[0].p[2] in 1550..1650)
         assertTrue("stroke is horizontal at 85% height", strokes[0].p.filterIndexed { i, _ -> i % 2 == 1 }.all { it in 1650..1750 })
         assertEquals("a tap is a single dot", 2, strokes[1].p.size)
         compose.onRoot().captureRoboImage("screenshots/07_draw.png")
+    }
+
+    // Narrow phone with large text: every tool stays reachable and no label is cut mid-word
+    @Test @Config(qualifiers = "w320dp-h640dp-xhdpi", fontScale = 1.3f)
+    fun drawOnSmallPhoneWithLargeText() {
+        compose.setContent { CuteKindTheme { Draw() } }
+        listOf("Eraser", "Undo", "Clear").forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithText("Send to Maya's home screen").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Clear").performScrollTo()
+        compose.onRoot().captureRoboImage("screenshots/17_draw_small_phone.png")
+    }
+
+    @Test @Config(qualifiers = "w780dp-h360dp-xhdpi")
+    fun drawLandscape() = shot("18_draw_landscape") { Draw() }
+
+    @Test @Config(qualifiers = "w840dp-h1100dp-xhdpi")
+    fun homeTablet() = shot("19_home_tablet") { Home(Samples.paired) }
+
+    @Test fun homeShowsWhyADrawingHasNotGoneOut() {
+        val stuck = Samples.paired.copy(
+            lastError = "Not sent yet: the relay server is limiting this network (limit reached: daily message quota reached). Will keep retrying.",
+        )
+        var retried = 0
+        compose.setContent {
+            CuteKindTheme { AppScaffold(stuck, Tab.HOME, {}) { m -> HomeScreen(stuck, now, {}, {}, {}, {}, {}, {}, m, onRetry = { retried++ }) } }
+        }
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(1, retried)
+        compose.onRoot().captureRoboImage("screenshots/20_home_not_sent.png")
     }
 
     @Test fun memories() = shot("08_memories") { AppScaffold(Samples.paired, Tab.MEMORIES, {}) { m -> MemoriesScreen(Samples.paired, now, m) } }

@@ -2,6 +2,8 @@ package app.cutekind.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,7 +49,7 @@ import app.cutekind.data.Questions
 import app.cutekind.sync.Wire
 
 @Composable
-fun SectionCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun SectionCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -66,6 +68,7 @@ fun HomeScreen(
     onJoinCode: () -> Unit,
     onAddWidget: () -> Unit,
     modifier: Modifier = Modifier,
+    onRetry: () -> Unit = {},
 ) {
     val latest = state.received.firstOrNull()
     Column(
@@ -82,6 +85,20 @@ fun HomeScreen(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 days?.let { Chip("Day $it together") }
                 streak?.let { Chip(if (it == 1) "1 day streak" else "$it day streak") }
+            }
+        }
+
+        val problem = state.lastError
+        if (problem != null || state.outbox.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+                containerColor = if (problem != null) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = if (problem != null) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            )) {
+                Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(problem?.replaceFirstChar(Char::uppercase) ?: "Sending to ${state.partnerLabel}…",
+                        Modifier.weight(1f).padding(vertical = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onRetry) { Text("Try again", maxLines = 1) }
+                }
             }
         }
 
@@ -105,7 +122,7 @@ fun HomeScreen(
         SectionCard {
             if (latest != null) {
                 DrawingView(
-                    latest.strokes, latest.bg, Modifier.fillMaxWidth(),
+                    latest.strokes, latest.bg, Modifier.align(Alignment.CenterHorizontally).widthIn(max = 440.dp).fillMaxWidth(),
                     replay = state.on(Feature.REPLAY), replayKey = latest.id,
                     description = "Drawing from ${latest.name}",
                 )
@@ -143,11 +160,6 @@ fun HomeScreen(
 
         OutlinedButton(onAddWidget, Modifier.fillMaxWidth()) { Text("Add the widget to my home screen") }
 
-        val status = state.lastError ?: if (state.outbox.isNotEmpty()) "Sending…" else null
-        if (status != null) {
-            Text(status, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 
