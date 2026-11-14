@@ -71,7 +71,7 @@ class PartnerWidget : AppWidgetProvider() {
             rv.text(R.id.widget_question, question, 0xFF3B2A33.toInt())
 
             val open = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
+                context, 7, Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_VIEW_LATEST, true),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             rv.setOnClickPendingIntent(R.id.widget_root, open)

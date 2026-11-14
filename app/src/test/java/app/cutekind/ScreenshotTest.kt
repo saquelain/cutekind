@@ -26,6 +26,8 @@ import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -47,6 +49,7 @@ import app.cutekind.draw.StickerMaker
 import app.cutekind.ui.AppScaffold
 import app.cutekind.ui.CuteKindTheme
 import app.cutekind.ui.DrawScreen
+import app.cutekind.ui.FullScreenDoodle
 import app.cutekind.ui.HomeScreen
 import app.cutekind.ui.JoinCard
 import app.cutekind.ui.MemoriesScreen
@@ -184,18 +187,54 @@ class ScreenshotTest {
         val back = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         assertEquals("keeps its 4:3 shape", 4f / 3f, back.width.toFloat() / back.height, 0.05f)
 
+        // an ordinary photo is not shrunk below 640 px: that is what made stickers look blurry before
+        val ordinary = Bitmap.createScaledBitmap(Samples.photo(), 1600, 1200, true)
+        val kept = java.util.Base64.getDecoder().decode(StickerMaker.encode(ordinary)).let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        assertEquals(640, kept.width); assertEquals(480, kept.height)
+
         // and a drawing carrying three of them still fits in the relay's message limit
         val d = Samples.drawing("p", "Sam", now).copy(stickers = List(3) { Sticker("i", data, 1000, 1000, 0.4f) })
         val env = app.cutekind.data.Envelope(id = "x", from = "a", name = "Sam", ts = now, type = "draw", drawing = d)
         val keys = app.cutekind.sync.Wire.keys("K7QM2XHD9TRB")
         val lines = app.cutekind.sync.Wire.encode(env, keys)
-        assertTrue("chunks: ${lines.size}", lines.size <= 64)
+        assertTrue("three worst-case photos stay inside one burst of relay messages: ${lines.size}", lines.size <= 45)
         assertEquals(env, app.cutekind.sync.Wire.decode(lines.joinToString("") { it.substringAfterLast('|') }, keys))
         widgetShot("22_widget_stickers", Samples.paired.copy(received = listOf(Samples.drawing("s", "Maya", now, stickers = listOf(
             Sticker("i", StickerMaker.encode(Samples.photo()), 560, 620, 0.42f, -8f),
             Sticker("t", "miss u", 1350, 1500, 0.13f, 6f, 0xFFE8507A.toInt()),
             Sticker("e", "🌙", 1500, 520, 0.22f),
         )))))
+    }
+
+    @Test fun tappingADoodleOpensItFullScreen() {
+        var open by mutableStateOf<app.cutekind.data.Drawing?>(null)
+        val state = Samples.paired.copy(received = listOf(Samples.drawing("s", "Maya", now - 3_600_000L, note = "Miss you, sleepyhead", stickers = listOf(
+            Sticker("i", StickerMaker.encode(Samples.photo()), 560, 620, 0.42f, -8f),
+            Sticker("t", "miss u", 1350, 1500, 0.13f, 6f, 0xFFE8507A.toInt()),
+        ))) + Samples.paired.received.drop(1))
+        compose.setContent {
+            CuteKindTheme {
+                AppScaffold(state, Tab.HOME, {}) { m -> HomeScreen(state, now, {}, {}, {}, {}, {}, {}, m, onOpen = { open = it }) }
+                open?.let { FullScreenDoodle(it, "Maya · today", replay = true, onClose = { open = null }) }
+            }
+        }
+        compose.onNodeWithContentDescription("Drawing from Maya").performClick()
+        assertEquals("s", open?.id)
+        compose.onNodeWithContentDescription("Doodle full screen").assertIsDisplayed()
+        compose.onNodeWithText("Replay").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("screenshots/23_full_screen.png")
+        compose.onNodeWithContentDescription("Doodle full screen").performTouchInput { doubleClick() }
+        compose.onRoot().captureRoboImage("screenshots/24_full_screen_zoomed.png")
+        compose.onNodeWithContentDescription("Close").performClick()
+        assertEquals(null, open)
+        compose.onNodeWithContentDescription("Doodle full screen").assertDoesNotExist()
+    }
+
+    @Test fun memoriesOpenFullScreenToo() {
+        var opened: String? = null
+        compose.setContent { CuteKindTheme { AppScaffold(Samples.paired, Tab.MEMORIES, {}) { m -> MemoriesScreen(Samples.paired, now, m, onOpen = { opened = it.id }) } } }
+        compose.onAllNodesWithContentDescription("Drawing from Maya")[1].performClick()
+        assertEquals("r2", opened)
     }
 
     @Test fun drawingsAreSavedToTheCuteKindAlbum() {

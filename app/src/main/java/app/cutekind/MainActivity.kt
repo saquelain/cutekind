@@ -28,6 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import app.cutekind.data.Days
 import app.cutekind.data.Feature
 import app.cutekind.sync.LiveService
 import app.cutekind.sync.Sync
@@ -35,6 +36,7 @@ import app.cutekind.sync.Wire
 import app.cutekind.ui.AppScaffold
 import app.cutekind.ui.CuteKindTheme
 import app.cutekind.ui.DrawScreen
+import app.cutekind.ui.FullScreenDoodle
 import app.cutekind.ui.HomeScreen
 import app.cutekind.ui.JoinDialog
 import app.cutekind.ui.MemoriesScreen
@@ -47,12 +49,21 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
+    /** Id of the doodle shown full screen, or null. */
+    private var viewing by mutableStateOf<String?>(null)
+
+    private fun openFromIntent(intent: Intent?) {
+        intent?.dataString?.let(vm::onLink)
+        if (intent?.getBooleanExtra(EXTRA_VIEW_LATEST, false) == true) viewing = vm.state.value.received.firstOrNull()?.id
+    }
+
+    companion object { const val EXTRA_VIEW_LATEST = "view_latest" }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Sync.schedule(this)
-        if (savedInstanceState == null) intent?.dataString?.let(vm::onLink)
+        if (savedInstanceState == null) openFromIntent(intent)
         setContent {
             CuteKindTheme {
                 val state by vm.state.collectAsStateWithLifecycle()
@@ -94,7 +105,7 @@ class MainActivity : ComponentActivity() {
                             Tab.HOME -> HomeScreen(
                                 state, now, onDraw = { tab = Tab.DRAW },
                                 onNudge = { vm.nudge(); scope.launch { snackbar.showSnackbar("Heart sent to ${state.partnerLabel}") } },
-                                onAnswer = vm::answer, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, modifier = m, onRetry = { vm.refresh() },
+                                onAnswer = vm::answer, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, modifier = m, onRetry = { vm.refresh() }, onOpen = { viewing = it.id },
                             )
                             Tab.DRAW -> DrawScreen(
                                 vm.strokes, vm.paper, vm.note, state.partnerLabel,
@@ -108,13 +119,20 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = m,
                             )
-                            Tab.MEMORIES -> MemoriesScreen(state, now, m)
+                            Tab.MEMORIES -> MemoriesScreen(state, now, m, onOpen = { viewing = it.id })
                             Tab.SETTINGS -> SettingsScreen(
                                 state, onFeature = vm::setFeature, onName = vm::setName, onAnniversary = vm::setAnniversary,
                                 onRelay = vm::setRelay, onShareCode = ::shareCode, onJoinCode = { vm.joinPrompt = "" }, onAddWidget = ::addWidget, onUnpair = vm::unpair, modifier = m, now = now, onSync = { now = System.currentTimeMillis(); vm.refresh() },
                                 backgroundAllowed = LiveService.unrestricted(this@MainActivity), onAllowBackground = ::allowBackground,
                             )
                         }
+                    }
+                    (state.received + state.sent).firstOrNull { it.id == viewing }?.let { d ->
+                        val mine = d.from == state.deviceId
+                        FullScreenDoodle(
+                            d, title = "${if (mine) "You" else d.name.ifBlank { state.partnerLabel }} · ${Days.ago(d.ts, now)}",
+                            replay = state.on(Feature.REPLAY), onClose = { viewing = null },
+                        )
                     }
                     vm.joinPrompt?.let { prefill ->
                         JoinDialog(
@@ -131,7 +149,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.dataString?.let(vm::onLink)
+        openFromIntent(intent)
     }
 
     override fun onStart() { super.onStart(); Sync.appInForeground = true; Sync.schedule(this) }

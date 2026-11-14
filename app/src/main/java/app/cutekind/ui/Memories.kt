@@ -23,9 +23,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.cutekind.data.AppState
 import app.cutekind.data.Days
+import app.cutekind.data.Drawing
 
 @Composable
-fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
+fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier, onOpen: (Drawing) -> Unit = {}) {
     var mine by rememberSaveable { mutableStateOf(false) }
     val list = if (mine) state.sent else state.received
     val waiting = state.outbox.mapNotNull { it.drawing?.id }.toSet()
@@ -53,7 +54,8 @@ fun MemoriesScreen(state: AppState, now: Long, modifier: Modifier = Modifier) {
         }
         items(list, key = { it.id }) { d ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                DrawingView(d.strokes, d.bg, Modifier.fillMaxWidth(), stickers = d.stickers, corner = 18.dp)
+                DrawingView(d.strokes, d.bg, Modifier.fillMaxWidth(), stickers = d.stickers, corner = 18.dp,
+                    description = "Drawing from ${d.name}", onClick = { onOpen(d) })
                 Text(
                     if (d.id in waiting) "Not sent yet" else d.note.ifBlank { Days.ago(d.ts, now).replaceFirstChar(Char::uppercase) },
                     style = MaterialTheme.typography.bodySmall,

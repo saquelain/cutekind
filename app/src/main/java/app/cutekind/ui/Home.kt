@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cutekind.data.AppState
 import app.cutekind.data.Days
+import app.cutekind.data.Drawing
 import app.cutekind.data.Feature
 import app.cutekind.data.Questions
 import app.cutekind.sync.Wire
@@ -69,6 +70,7 @@ fun HomeScreen(
     onAddWidget: () -> Unit,
     modifier: Modifier = Modifier,
     onRetry: () -> Unit = {},
+    onOpen: (Drawing) -> Unit = {},
 ) {
     val latest = state.received.firstOrNull()
     Column(
@@ -125,7 +127,7 @@ fun HomeScreen(
                     latest.strokes, latest.bg, Modifier.align(Alignment.CenterHorizontally).widthIn(max = 440.dp).fillMaxWidth(),
                     stickers = latest.stickers,
                     replay = state.on(Feature.REPLAY), replayKey = latest.id,
-                    description = "Drawing from ${latest.name}",
+                    description = "Drawing from ${latest.name}", onClick = { onOpen(latest) },
                 )
                 Text(
                     "${latest.name.ifBlank { state.partnerLabel }} drew this ${Days.ago(latest.ts, now)}",

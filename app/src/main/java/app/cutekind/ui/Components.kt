@@ -44,6 +44,7 @@ fun DrawingView(
     replayKey: Any? = null,
     corner: Dp = 24.dp,
     description: String = "Drawing",
+    onClick: (() -> Unit)? = null,
 ) {
     val progress = remember { Animatable(1f) }
     var plays by remember { mutableIntStateOf(0) }
@@ -60,7 +61,11 @@ fun DrawingView(
             .aspectRatio(1f)
             .clip(shape)
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
-            .then(if (replay) Modifier.clickable(onClickLabel = "Replay drawing") { plays++ } else Modifier)
+            .then(when {
+                onClick != null -> Modifier.clickable(onClickLabel = "Open full screen", onClick = onClick)
+                replay -> Modifier.clickable(onClickLabel = "Replay drawing") { plays++ }
+                else -> Modifier
+            })
             .semantics { contentDescription = description },
     ) {
         drawRect(Color(bg))
